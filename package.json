@@ -23,5 +23,8 @@
   "dependencies": {
     "botbuilder": "^3.14.0",
     "restify": "^6.3.4"
+  },
+  "devDependencies": {
+    "@types/restify": "^5.0.7"
   }
 }

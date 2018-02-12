@@ -10,16 +10,24 @@ var botConnectorOptions = {
 
 // Create bot
 var connector = new builder.ChatConnector(botConnectorOptions);
-var bot = new builder.UniversalBot(connector);
+var bot = new builder.UniversalBot(connector,
+[
+  (session) => {
+    builder.Prompts.text(session, 'Hello! What is your name?');
+  },
+  (session, results) => {
+    session.endDialog(`Hello, ${results.response}`);
+  }
+]);
 
-bot.dialog('/', function (session) {
+// bot.dialog('/', function (session) {
+//
+//     //respond with user's message
+//     //this will send you said+what ever user says.
+//     session.send("You said " + session.message.text);
+// });
 
-    //respond with user's message
-    //this will send you said+what ever user says.
-    session.send("You said " + session.message.text);
-});
-
-// Setup Restify Server
+// Create the host web server
 var server = restify.createServer();
 
 // Handle Bot Framework messages
@@ -37,6 +45,7 @@ server.get(/.*/, restify.plugins.serveStatic({
         'default': 'index.html'
 }));
 
-server.listen(process.env.port || 3978, function () {
-    console.log('%s listening to %s', server.name, server.url);
-});
+server.listen(
+  process.env.PORT || 3978,
+  () => console.log('%s Listening to %s', server.name, server.url)
+)

@@ -33,7 +33,19 @@ var bot = new builder.UniversalBot(connector,
 
 );
 server.post('/api/messages', connector.listen());
-
+bot.dialog('help',[
+  (session) => {
+    session.endDialog(`I'm a simple bot..`);
+  }
+]).triggerAction({
+  matches: /^help$/i,
+  onSelectAction: (session,args) => {
+    //Execute just before the dialog launches
+    //change the default behaviour
+    //the default behaviour is to REPLACE the dialog stack
+    session.beginDialog(args.action,args);
+  }
+})
 bot.dialog('/ensureProfile', [
      (session, args, next) => {
         session.dialogData.profile = args || {};

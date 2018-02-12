@@ -1,12 +1,11 @@
 
 var restify = require('restify');
 var builder = require('botbuilder');
-
+var githubClient = require('./github-client.js');
 
 //Boot Setup
 // Create the host web server
 var server = restify.createServer();
-
 server.listen(
   process.env.PORT || 3978,
   () => console.log('%s Listening to %s', server.name, server.url)
@@ -20,62 +19,65 @@ var botConnectorOptions = {
 
 // Create bot
 var connector = new builder.ChatConnector(botConnectorOptions);
-var bot = new builder.UniversalBot(connector,
-[
-  (session) => {
-          session.beginDialog('/ensureProfile', session.userData.profile);
-  },
-  (session,results) => {
-    const profile = session.userData.profile = results.response;
-    session.endConversation(`Hello ${profile.name}. I love ${profile.company}`);
-  }
-]
+var bot = new builder.UniversalBot(connector);
 
-);
-server.post('/api/messages', connector.listen());
-bot.dialog('help',[
-  (session) => {
-    session.endDialog(`I'm a simple bot..`);
-  }
-]).triggerAction({
-  matches: /^help$/i,
-  onSelectAction: (session,args) => {
-    //Execute just before the dialog launches
-    //change the default behaviour
-    //the default behaviour is to REPLACE the dialog stack
-    session.beginDialog(args.action,args);
-  }
-})
-bot.dialog('/ensureProfile', [
-     (session, args, next) => {
-        session.dialogData.profile = args || {};
-        //Checks whether or not we already have the user's name
-        if (!session.dialogData.profile.name) {
-            builder.Prompts.text(session, "What's your name?");
+var dialog = new builder.IntentDialog();
+dialog.matches(/^search/i, [
+    function (session, args, next) {
+        if (session.message.text.toLowerCase() == 'search') {
+            builder.Prompts.text(session, 'Who are you looking for?');
         } else {
-            next();
+            var query = session.message.text.substring(7);
+            next({ response: query });
         }
     },
-    (session, results, next) => {
-      if(results.response){
-        session.dialogData.profile.name = results.response;
-      }
-      if(!session.dialogData.profile.company){
-        builder.Prompts.text(session, `What company do you work for?`);
-      }
-      else {
-        next();
-      }
-    },
-    (session,results) => {
-      if(results.response){
-        session.dialogData.profile.company = results.response;
-      }
-      session.endDialogWithResult({response: session.dialogData.profile});
-    }
+    function (session, result, next) {
+        var query = result.response;
+        if (!query) {
+            session.endDialog('Request cancelled');
+        } else {
+            githubClient.executeSearch(query, function (profiles) {
+                var totalCount = profiles.total_count;
+                if (totalCount == 0) {
+                    session.endDialog('Sorry, no results found.');
+                } else if (totalCount > 10) {
+                    session.endDialog('More than 10 results were found. Please provide a more restrictive query.');
+                } else {
+                    session.dialogData.property = null;
+                    var usernames = profiles.items.map(function (item) { return item.login });
+                    builder.Prompts.choice(session, 'What user do you want to load?', usernames);
+                }
+            });
+        }
+    }, function (session, result, next) {
+        var username = result.response.entity;
+        githubClient.loadProfile(username, function (profile) {
+            var card = new builder.ThumbnailCard(session);
 
+            card.title(profile.login);
+
+            card.images([builder.CardImage.create(session, profile.avatar_url)]);
+
+            if (profile.name) card.subtitle(profile.name);
+
+            var text = '';
+            if (profile.company) text += profile.company + ' \n';
+            if (profile.email) text += profile.email + ' \n';
+            if (profile.bio) text += profile.bio;
+            card.text(text);
+
+            card.tap(new builder.CardAction.openUrl(session, profile.html_url));
+
+            var message = new builder.Message(session).attachments([card]);
+            session.send(message);
+        });
+    }
 ]);
 
+bot.dialog('/', dialog);
+
+
+server.post('/api/messages', connector.listen());
 // Serve a static web page
 server.get(/.*/, restify.plugins.serveStatic({
         'directory': '.',

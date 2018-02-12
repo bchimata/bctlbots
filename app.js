@@ -2,6 +2,16 @@
 var restify = require('restify');
 var builder = require('botbuilder');
 
+
+//Boot Setup
+// Create the host web server
+var server = restify.createServer();
+
+server.listen(
+  process.env.PORT || 3978,
+  () => console.log('%s Listening to %s', server.name, server.url)
+)
+
 // Get secrets from server environment
 var botConnectorOptions = {
     appId: 'b581f81e-1b57-441d-8227-35ec7360a889',
@@ -13,39 +23,49 @@ var connector = new builder.ChatConnector(botConnectorOptions);
 var bot = new builder.UniversalBot(connector,
 [
   (session) => {
-    builder.Prompts.text(session, 'Hello! What is your name?');
+          session.beginDialog('/ensureProfile', session.userData.profile);
   },
-  (session, results) => {
-    session.endDialog(`Hello, ${results.response}`);
+  (session,results) => {
+    const profile = session.userData.profile = results.response;
+    session.endConversation(`Hello ${profile.name}. I love ${profile.company}`);
   }
-]);
+]
 
-// bot.dialog('/', function (session) {
-//
-//     //respond with user's message
-//     //this will send you said+what ever user says.
-//     session.send("You said " + session.message.text);
-// });
-
-// Create the host web server
-var server = restify.createServer();
-
-// Handle Bot Framework messages
-/*here we are giving path as "/api/messages" because during the process of
-regi9stering bot we have given end point URL as
-"azure qwebapp url/api/messages" if you want to give some other url give
-the same url whatever you give in the endpoint excluding azure webapp url
-https://bctlbot.azurewebsites.net/api/messages
- */
+);
 server.post('/api/messages', connector.listen());
+
+bot.dialog('/ensureProfile', [
+     (session, args, next) => {
+        session.dialogData.profile = args || {};
+        //Checks whether or not we already have the user's name
+        if (!session.dialogData.profile.name) {
+            builder.Prompts.text(session, "What's your name?");
+        } else {
+            next();
+        }
+    },
+    (session, results, next) => {
+      if(results.response){
+        session.dialogData.profile.name = results.response;
+      }
+      if(!session.dialogData.profile.company){
+        builder.Prompts.text(session, `What company do you work for?`);
+      }
+      else {
+        next();
+      }
+    },
+    (session,results) => {
+      if(results.response){
+        session.dialogData.profile.company = results.response;
+      }
+      session.endDialogWithResult({response: session.dialogData.profile});
+    }
+
+]);
 
 // Serve a static web page
 server.get(/.*/, restify.plugins.serveStatic({
         'directory': '.',
         'default': 'index.html'
 }));
-
-server.listen(
-  process.env.PORT || 3978,
-  () => console.log('%s Listening to %s', server.name, server.url)
-)
